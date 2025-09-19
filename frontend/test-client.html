@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App Test Client</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        
+        .connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .input-group {
+            margin: 15px 0;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: #5a6fd8;
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .messages {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            margin: 20px 0;
+        }
+        
+        .message {
+            margin: 8px 0;
+            padding: 8px 12px;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+            background: white;
+        }
+        
+        .message.system {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+        
+        .message.error {
+            border-left-color: #dc3545;
+            background: #f8d7da;
+        }
+        
+        .timestamp {
+            font-size: 12px;
+            color: #666;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Chat App Test Client</h1>
+        
+        <div id="status" class="status disconnected">
+            ❌ Not connected to server
+        </div>
+        
+        <div class="input-group">
+            <label for="username">Your Name:</label>
+            <input type="text" id="username" placeholder="Enter your name" value="TestUser">
+        </div>
+        
+        <button id="connectBtn" onclick="connect()">Connect to Server</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+        
+        <div class="input-group">
+            <label for="messageInput">Message:</label>
+            <input type="text" id="messageInput" placeholder="Type a message..." disabled>
+        </div>
+        
+        <button id="sendBtn" onclick="sendMessage()" disabled>Send Message</button>
+        
+        <div class="messages" id="messages">
+            <div class="message system">
+                📡 Click "Connect to Server" to start testing!
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let connected = false;
+
+        function addMessage(content, type = 'normal') {
+            const messages = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            messageDiv.innerHTML = `${content} <span class="timestamp">${timestamp}</span>`;
+            
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function updateStatus(isConnected) {
+            const status = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const messageInput = document.getElementById('messageInput');
+            const sendBtn = document.getElementById('sendBtn');
+            
+            connected = isConnected;
+            
+            if (isConnected) {
+                status.className = 'status connected';
+                status.innerHTML = '✅ Connected to server';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+            } else {
+                status.className = 'status disconnected';
+                status.innerHTML = '❌ Not connected to server';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                messageInput.disabled = true;
+                sendBtn.disabled = true;
+            }
+        }
+
+        function connect() {
+            const username = document.getElementById('username').value;
+            
+            if (!username.trim()) {
+                alert('Please enter your name first!');
+                return;
+            }
+
+            addMessage('🔌 Connecting to server...', 'system');
+            
+            socket = io('http://localhost:3001');
+
+            socket.on('connect', () => {
+                addMessage('🎉 Connected successfully!', 'system');
+                updateStatus(true);
+                
+                // Send hello message
+                socket.emit('hello', { name: username });
+            });
+
+            socket.on('hello_response', (data) => {
+                addMessage(`👋 Server says: ${data.message}`, 'system');
+            });
+
+            socket.on('user_joined', (data) => {
+                addMessage(`🚪 ${data.message}`, 'system');
+            });
+
+            socket.on('user_left', (data) => {
+                addMessage(`🚪 ${data.message}`, 'system');
+            });
+
+            socket.on('new_message', (data) => {
+                if (data.socketId !== socket.id) {
+                    addMessage(`💬 <strong>${data.username}:</strong> ${data.message}`);
+                }
+            });
+
+            socket.on('disconnect', (reason) => {
+                addMessage(`❌ Disconnected: ${reason}`, 'error');
+                updateStatus(false);
+            });
+
+            socket.on('connect_error', (error) => {
+                addMessage(`❌ Connection error: ${error.message}`, 'error');
+                updateStatus(false);
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                addMessage('👋 Disconnected from server', 'system');
+                updateStatus(false);
+            }
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const username = document.getElementById('username').value;
+            const message = messageInput.value.trim();
+            
+            if (!message) {
+                alert('Please enter a message!');
+                return;
+            }
+            
+            if (!connected) {
+                alert('Not connected to server!');
+                return;
+            }
+
+            // Add message to our own chat
+            addMessage(`💬 <strong>You:</strong> ${message}`);
+            
+            // Send to server
+            socket.emit('send_message', {
+                username: username,
+                message: message
+            });
+            
+            // Clear input
+            messageInput.value = '';
+        }
+
+        // Allow Enter key to send message
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Allow Enter key to connect
+        document.getElementById('username').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !connected) {
+                connect();
+            }
+        });
+    </script>
+</body>
+</html>

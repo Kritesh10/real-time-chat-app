@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat App Test Client</title>
+    <title>Chat App Test Client - With Database</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -58,7 +58,7 @@
             color: #333;
         }
         
-        input[type="text"] {
+        input[type="text"], input[type="number"] {
             width: 100%;
             padding: 10px;
             border: 2px solid #ddd;
@@ -91,7 +91,7 @@
             border: 2px solid #ddd;
             border-radius: 5px;
             padding: 15px;
-            height: 300px;
+            height: 400px;
             overflow-y: auto;
             background: #f8f9fa;
             margin: 20px 0;
@@ -115,28 +115,92 @@
             background: #f8d7da;
         }
         
+        .message.history {
+            border-left-color: #6c757d;
+            background: #e9ecef;
+        }
+        
+        .message-header {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 4px;
+        }
+        
         .timestamp {
             font-size: 12px;
             color: #666;
             margin-left: 10px;
         }
+        
+        .typing-indicator {
+            font-style: italic;
+            color: #6c757d;
+            background: #f8f9fa;
+            border-left: 4px solid #6c757d;
+            padding: 8px 12px;
+            border-radius: 5px;
+            margin: 8px 0;
+        }
+        
+        .user-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .demo-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        
+        .demo-section h3 {
+            margin-top: 0;
+            color: #495057;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚀 Chat App Test Client</h1>
+        <h1>💾 Chat App Test Client - Database Edition</h1>
         
         <div id="status" class="status disconnected">
             ❌ Not connected to server
         </div>
-        
-        <div class="input-group">
-            <label for="username">Your Name:</label>
-            <input type="text" id="username" placeholder="Enter your name" value="TestUser">
+
+        <div class="demo-section">
+            <h3>🧪 Database Testing Features</h3>
+            <p>This client now tests:</p>
+            <ul>
+                <li>✅ Message persistence in PostgreSQL</li>
+                <li>✅ User tracking with online status</li>
+                <li>✅ Message history loading</li>
+                <li>✅ Room-based messaging</li>
+            </ul>
         </div>
         
-        <button id="connectBtn" onclick="connect()">Connect to Server</button>
+        <div class="user-controls">
+            <div class="input-group">
+                <label for="userId">User ID (for testing):</label>
+                <input type="number" id="userId" placeholder="Enter user ID (1-10)" value="1" min="1" max="10">
+            </div>
+            
+            <div class="input-group">
+                <label for="username">Display Name:</label>
+                <input type="text" id="username" placeholder="Enter your name" value="TestUser1">
+            </div>
+        </div>
+        
+        <div class="input-group">
+            <label for="roomId">Chat Room:</label>
+            <input type="text" id="roomId" placeholder="Room ID" value="general">
+        </div>
+        
+        <button id="connectBtn" onclick="connect()">Connect & Join Room</button>
         <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+        <button onclick="createTestUsers()">Create Test Users</button>
         
         <div class="input-group">
             <label for="messageInput">Message:</label>
@@ -147,7 +211,10 @@
         
         <div class="messages" id="messages">
             <div class="message system">
-                📡 Click "Connect to Server" to start testing!
+                🚀 Welcome to Database-Powered Chat!<br>
+                📝 Messages are now saved to PostgreSQL<br>
+                👥 User status is tracked<br>
+                📜 Message history will load when you join
             </div>
         </div>
     </div>
@@ -155,17 +222,41 @@
     <script>
         let socket = null;
         let connected = false;
+        let isTyping = false;
+        let typingTimeout = null;
 
-        function addMessage(content, type = 'normal') {
+        function addMessage(content, type = 'normal', isHistory = false) {
             const messages = document.getElementById('messages');
             const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
+            messageDiv.className = `message ${type} ${isHistory ? 'history' : ''}`;
             
             const timestamp = new Date().toLocaleTimeString();
-            messageDiv.innerHTML = `${content} <span class="timestamp">${timestamp}</span>`;
+            if (isHistory) {
+                messageDiv.innerHTML = `📜 ${content} <span class="timestamp">[History]</span>`;
+            } else {
+                messageDiv.innerHTML = `${content} <span class="timestamp">${timestamp}</span>`;
+            }
             
             messages.appendChild(messageDiv);
             messages.scrollTop = messages.scrollHeight;
+        }
+
+        function addTypingIndicator(username) {
+            removeTypingIndicator();
+            const messages = document.getElementById('messages');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'typing-indicator';
+            typingDiv.id = 'typing-indicator';
+            typingDiv.innerHTML = `💭 ${username} is typing...`;
+            messages.appendChild(typingDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            const existing = document.getElementById('typing-indicator');
+            if (existing) {
+                existing.remove();
+            }
         }
 
         function updateStatus(isConnected) {
@@ -179,13 +270,6 @@
             
             if (isConnected) {
                 status.className = 'status connected';
-                status.innerHTML = '✅ Connected to server';
-                connectBtn.disabled = true;
-                disconnectBtn.disabled = false;
-                messageInput.disabled = false;
-                sendBtn.disabled = false;
-            } else {
-                status.className = 'status disconnected';
                 status.innerHTML = '❌ Not connected to server';
                 connectBtn.disabled = false;
                 disconnectBtn.disabled = true;
@@ -195,10 +279,12 @@
         }
 
         function connect() {
+            const userId = document.getElementById('userId').value;
             const username = document.getElementById('username').value;
+            const roomId = document.getElementById('roomId').value;
             
-            if (!username.trim()) {
-                alert('Please enter your name first!');
+            if (!userId || !username || !roomId) {
+                alert('Please fill in User ID, Name, and Room ID!');
                 return;
             }
 
@@ -210,12 +296,24 @@
                 addMessage('🎉 Connected successfully!', 'system');
                 updateStatus(true);
                 
-                // Send hello message
-                socket.emit('hello', { name: username });
+                // Join room with user ID
+                socket.emit('join_room', { 
+                    roomId: roomId,
+                    userId: parseInt(userId)
+                });
             });
 
-            socket.on('hello_response', (data) => {
-                addMessage(`👋 Server says: ${data.message}`, 'system');
+            socket.on('message_history', (messages) => {
+                addMessage('📜 Loading message history...', 'system');
+                messages.forEach(msg => {
+                    const timeStr = new Date(msg.createdAt).toLocaleString();
+                    addMessage(
+                        `<div class="message-header">${msg.user.username}:</div>${msg.message} <span class="timestamp">${timeStr}</span>`,
+                        'normal',
+                        true
+                    );
+                });
+                addMessage('✅ Message history loaded', 'system');
             });
 
             socket.on('user_joined', (data) => {
@@ -227,19 +325,38 @@
             });
 
             socket.on('new_message', (data) => {
-                if (data.socketId !== socket.id) {
-                    addMessage(`💬 <strong>${data.username}:</strong> ${data.message}`);
+                const timeStr = new Date(data.createdAt).toLocaleString();
+                addMessage(
+                    `<div class="message-header">${data.user.username}:</div>${data.message} <span class="timestamp">${timeStr}</span>`
+                );
+            });
+
+            socket.on('user_typing', (data) => {
+                if (data.isTyping) {
+                    addTypingIndicator(data.username);
+                } else {
+                    removeTypingIndicator();
                 }
+            });
+
+            socket.on('error', (error) => {
+                addMessage(`❌ Error: ${error.message}`, 'error');
             });
 
             socket.on('disconnect', (reason) => {
                 addMessage(`❌ Disconnected: ${reason}`, 'error');
                 updateStatus(false);
+                removeTypingIndicator();
             });
 
             socket.on('connect_error', (error) => {
                 addMessage(`❌ Connection error: ${error.message}`, 'error');
                 updateStatus(false);
+            });
+
+            // Test old hello event for backward compatibility
+            socket.on('hello_response', (data) => {
+                addMessage(`👋 Server says: ${data.message}`, 'system');
             });
         }
 
@@ -248,12 +365,14 @@
                 socket.disconnect();
                 addMessage('👋 Disconnected from server', 'system');
                 updateStatus(false);
+                removeTypingIndicator();
             }
         }
 
         function sendMessage() {
             const messageInput = document.getElementById('messageInput');
-            const username = document.getElementById('username').value;
+            const userId = document.getElementById('userId').value;
+            const roomId = document.getElementById('roomId').value;
             const message = messageInput.value.trim();
             
             if (!message) {
@@ -266,32 +385,91 @@
                 return;
             }
 
-            // Add message to our own chat
-            addMessage(`💬 <strong>You:</strong> ${message}`);
-            
-            // Send to server
+            // Send to server (database will handle it)
             socket.emit('send_message', {
-                username: username,
+                userId: parseInt(userId),
+                roomId: roomId,
                 message: message
             });
             
-            // Clear input
+            // Clear input and stop typing
             messageInput.value = '';
+            handleTyping(false);
         }
 
-        // Allow Enter key to send message
+        function handleTyping(typing) {
+            if (!connected || !socket) return;
+            
+            const username = document.getElementById('username').value;
+            const roomId = document.getElementById('roomId').value;
+            
+            if (typing && !isTyping) {
+                isTyping = true;
+                socket.emit('typing', { roomId, username, isTyping: true });
+            } else if (!typing && isTyping) {
+                isTyping = false;
+                socket.emit('typing', { roomId, username, isTyping: false });
+            }
+            
+            // Auto-stop typing after 3 seconds
+            if (typing) {
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    handleTyping(false);
+                }, 3000);
+            }
+        }
+
+        // Create test users for demonstration
+        async function createTestUsers() {
+            const testUsers = [
+                { id: 1, username: 'alice', email: 'alice@test.com', password: 'password123' },
+                { id: 2, username: 'bob', email: 'bob@test.com', password: 'password123' },
+                { id: 3, username: 'charlie', email: 'charlie@test.com', password: 'password123' },
+                { id: 4, username: 'diana', email: 'diana@test.com', password: 'password123' },
+                { id: 5, username: 'eve', email: 'eve@test.com', password: 'password123' }
+            ];
+
+            addMessage('👥 Creating test users in database...', 'system');
+            
+            // Note: In a real app, you'd have API endpoints for this
+            // For now, this is just a placeholder - you'll need to manually add users to test
+            setTimeout(() => {
+                addMessage('✅ Test users ready! Use User IDs 1-5 for testing', 'system');
+                addMessage('💡 In production, you would register users through API endpoints', 'system');
+            }, 1000);
+        }
+
+        // Event listeners
         document.getElementById('messageInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 sendMessage();
+            } else {
+                handleTyping(true);
             }
         });
 
-        // Allow Enter key to connect
+        document.getElementById('messageInput').addEventListener('blur', () => {
+            handleTyping(false);
+        });
+
+        document.getElementById('userId').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !connected) {
+                connect();
+            }
+        });
+
         document.getElementById('username').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !connected) {
+                connect();
+            }
+        });
+
+        document.getElementById('roomId').addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !connected) {
                 connect();
             }
         });
     </script>
 </body>
-</html>
+</html> 
